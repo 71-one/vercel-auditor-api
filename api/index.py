@@ -51,30 +51,30 @@ def search_by_code():
         name = r.get("审核员姓名", "")
         if name not in auditor_map:
             auditor_map[name] = {
-                "姓名": name,
-                "具备体系": r.get("具备体系", ""),
-                "能力来源": r.get("能力来源", ""),
-                "认证决定": r.get("认证决定", ""),
-                "首席": r.get("首席", ""),
-                "状态": r.get("状态", ""),
-                "负责体系": []
+                "name": name,
+                "systems": r.get("具备体系", ""),
+                "source": r.get("能力来源", ""),
+                "certification_decision": r.get("认证决定", ""),
+                "is_chief": r.get("首席", ""),
+                "status": r.get("状态", ""),
+                "responsible_systems": []
             }
-        auditor_map[name]["负责体系"].append({
-            "体系": r.get("体系", ""),
-            "专业代码": r.get("专业代码", ""),
-            "专业名称": r.get("专业名称", ""),
-            "分类代码": r.get("分类代码", "")
+        auditor_map[name]["responsible_systems"].append({
+            "system": r.get("体系", ""),
+            "code": r.get("专业代码", ""),
+            "name": r.get("专业名称", ""),
+            "category_code": r.get("分类代码", "")
         })
 
     auditor_list = list(auditor_map.values())
 
     return jsonify({
         "success": True,
-        "查询代码": code,
-        "体系筛选": system if system else "全部",
-        "匹配审核员数": len(auditor_list),
-        "总记录数": len(results),
-        "审核员列表": auditor_list
+        "query_code": code,
+        "system_filter": system if system else "全部",
+        "matched_auditor_count": len(auditor_list),
+        "total_records": len(results),
+        "auditors": auditor_list
     })
 
 
@@ -95,10 +95,10 @@ def search_by_name(name):
 
     return jsonify({
         "success": True,
-        "审核员": name,
-        "具备体系": systems,
-        "认证专业代码数": len(codes),
-        "专业代码列表": sorted(codes)
+        "auditor": name,
+        "systems": systems,
+        "certified_code_count": len(codes),
+        "code_list": sorted(codes)
     })
 
 
@@ -109,8 +109,8 @@ def list_codes():
     codes = sorted(set(r.get("专业代码", "") for r in AUDITORS))
     return jsonify({
         "success": True,
-        "专业代码总数": len(codes),
-        "专业代码列表": codes
+        "total_codes": len(codes),
+        "codes": codes
     })
 
 
@@ -121,8 +121,8 @@ def list_names():
     names = sorted(set(r.get("审核员姓名", "") for r in AUDITORS))
     return jsonify({
         "success": True,
-        "审核员总数": len(names),
-        "审核员列表": names
+        "total_auditors": len(names),
+        "auditors": names
     })
 
 
@@ -130,14 +130,14 @@ def list_names():
 @app.route("/", methods=["GET"])
 def health():
     return jsonify({
-        "service": "审核员代码库查询API",
+        "service": "auditor-code-query-api",
         "status": "running",
-        "总记录数": len(AUDITORS),
-        "接口列表": {
-            "查询专业代码": "/api/auditors?code=06.02.01",
-            "查询审核员": "/api/auditor/付宏良",
-            "所有代码": "/api/codes",
-            "所有审核员": "/api/names"
+        "total_records": len(AUDITORS),
+        "endpoints": {
+            "query_by_code": "/api/auditors?code=06.02.01",
+            "query_by_name": "/api/auditor/付宏良",
+            "all_codes": "/api/codes",
+            "all_names": "/api/names"
         }
     })
 

@@ -1,51 +1,77 @@
 """
-审核员代码库查询 API（Vercel 优化版）
-- 数据按专业代码预先分组，查询时直接读取，避免遍历全表
-- 只返回必要字段，减小响应体积
+审核员代码库查询 API（Vercel 版）
+- 读取 auditors.json，启动时自动构建分组索引
+- 按专业代码精确查询
 """
 import json
 import os
+from collections import defaultdict
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
 
-# ====== 启动时加载分组数据 ======
+# ====== 启动时加载并构建索引 ======
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE = os.path.join(BASE_DIR, "auditors_by_code.json")
+DATA_FILE = os.path.join(BASE_DIR, "auditors.json")
 
 with open(DATA_FILE, "r", encoding="utf-8") as f:
-    AUDITORS_BY_CODE = json.load(f)
+    RAW_AUDITORS = json.load(f)
 
-# 同时生成姓名索引（启动时一次性算好，避免每次请求遍历）
+# 按专业代码分组
+AUDITORS_BY_CODE = defaultdict(list)
 NAME_INDEX = {}
-ALL_CODES = sorted(AUDITORS_BY_CODE.keys())
 ALL_NAMES = set()
-for code, auditors in AUDITORS_BY_CODE.items():
-    for auditor in auditors:
-        name = auditor["name"]
-        ALL_NAMES.add(name)
-        if name not in NAME_INDEX:
-            NAME_INDEX[name] = {
-                "systems": set(),
-                "codes": set()
-            }
-        NAME_INDEX[name]["systems"].add(auditor.get("systems", ""))
-        NAME_INDEX[name]["codes"].add(code)
 
+for r in RAW_AUDITORS:
+    code = r.get("专业代码", "")
+    name = r.get("审核员姓名", "")
+    if not code or not name:
+        continue
+
+    ALL_NAMES.add(name)
+
+    if name not in NAME_INDEX:
+        NAME_INDEX[name] = {
+            "systems": set(),
+            "codes": set()
+        }
+    NAME_INDEX[name]["systems"].add(r.get("具备体系", ""))
+    NAME_INDEX[name]["codes"].add(code)
+
+    existing = next((a for a in AUDITORS_BY_CODE[code] if a["name"] == name), None)
+    if not existing:
+        existing = {
+            "name": name,
+            "systems": r.get("具备体系", ""),
+            "source": r.get("能力来源", ""),
+            "certification_decision": r.get("认证决定", ""),
+            "is_chief": r.get("首席", ""),
+            "status": r.get("状态", ""),
+            "responsible_systems": []
+        }
+        AUDITORS_BY_CODE[code].append(existing)
+
+    existing["responsible_systems"].append({
+        "system": r.get("体系", ""),
+        "code": code,
+        "name": r.get("专业名称", ""),
+        "category_code": r.get("分类代码", "")
+    })
+
+# 排序
+priority = {"学历+工作经历": 0, "同组扩展": 1}
+for code in AUDITORS_BY_CODE:
+    AUDITORS_BY_CODE[code].sort(key=lambda a: priority.get(a["source"], 2))
+
+ALL_CODES = sorted(AUDITORS_BY_CODE.keys())
 ALL_NAMES = sorted(ALL_NAMES)
 
 
 # ====== 接口1：根据专业代码查询审核员 ======
 @app.route("/api/auditors", methods=["GET"])
 def search_by_code():
-    """
-    精确查询某个专业代码下的所有审核员
-    参数:
-      - code: 专业代码（如 06.02.01）
-      - system: 可选，体系筛选（如 Q / E / S / F）
-    """
     code = request.args.get("code", "").strip()
     system = request.args.get("system", "").strip().upper()
 
@@ -57,7 +83,6 @@ def search_by_code():
 
     auditors = AUDITORS_BY_CODE.get(code, [])
 
-    # 可选：按体系筛选
     if system:
         filtered = []
         for auditor in auditors:
@@ -81,7 +106,6 @@ def search_by_code():
 # ====== 接口2：查询某个审核员的所有认证代码 ======
 @app.route("/api/auditor/<name>", methods=["GET"])
 def search_by_name(name):
-    """查询某个审核员的所有专业代码"""
     info = NAME_INDEX.get(name)
     if not info:
         return jsonify({
@@ -101,7 +125,6 @@ def search_by_name(name):
 # ====== 接口3：列出所有专业代码 ======
 @app.route("/api/codes", methods=["GET"])
 def list_codes():
-    """列出所有可用的专业代码"""
     return jsonify({
         "success": True,
         "total_codes": len(ALL_CODES),
@@ -112,7 +135,6 @@ def list_codes():
 # ====== 接口4：列出所有审核员 ======
 @app.route("/api/names", methods=["GET"])
 def list_names():
-    """列出所有审核员姓名"""
     return jsonify({
         "success": True,
         "total_auditors": len(ALL_NAMES),
@@ -127,6 +149,7 @@ def health():
         "service": "auditor-code-query-api",
         "status": "running",
         "total_codes": len(ALL_CODES),
+        "total_auditors": len(ALL_NAMES),
         "endpoints": {
             "query_by_code": "/api/auditors?code=06.02.01",
             "query_by_name": "/api/auditor/付宏良",
